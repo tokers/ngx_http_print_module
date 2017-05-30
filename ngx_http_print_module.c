@@ -201,6 +201,7 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_print_loc_conf_t *plcf;
     ngx_str_t                 *object;
     ngx_str_t                 *value;
+    ngx_uint_t                 i;
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_print_handler;
@@ -216,14 +217,16 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value = cf->args->elts;
 
-    object = ngx_array_push(plcf->objects);
-    if (object == NULL) {
-        return NGX_CONF_ERROR;
+    for (i = 1; i < cf->args->nelts; i++) {
+        object = ngx_array_push(plcf->objects);
+        if (object == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        object->len = value[i].len;
+        object->data = ngx_palloc(cf->temp_pool, object->len);
+        ngx_memcpy(object->data, value[i].data, value[i].len); 
     }
-
-    object->len = value[1].len;
-    object->data = ngx_palloc(cf->temp_pool, object->len);
-    ngx_memcpy(object->data, value[1].data, value[1].len); 
-
+        
     return NGX_CONF_OK;
 }
