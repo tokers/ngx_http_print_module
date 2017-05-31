@@ -16,6 +16,6 @@ server {
         print "Wednesday";
         print "I like";
         print "Nginx";
-    };
+    }
 }
 ```
