@@ -51,6 +51,7 @@ static void *ngx_http_print_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 static char *ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static void ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev);
 
 
 static ngx_command_t ngx_http_print_commands[] = {
@@ -119,6 +120,34 @@ ngx_module_t  ngx_http_print_module = {
 };
 
 
+static void
+ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev)
+{
+    ngx_connection_t   *c;
+    ngx_http_request_t *r;
+
+    c = wev->data;
+    r = c->data;
+
+    if (!wev->timedout) {
+        ngx_log_error(NGX_LOG_ERR, c->log, 0, "timer expired prematurely");
+        ngx_http_finalize_request(r, NGX_ERROR);
+    }
+
+    if (c->destroyed) {
+        return;
+    }
+
+    if (c->error) {
+        ngx_http_finalize_request(r, NGX_ERROR);
+    }
+
+    wev->timedout = 0;
+
+    ngx_http_print_process_duplicate(r);
+}
+
+
 static ngx_int_t
 ngx_http_print_process_duplicate(ngx_http_request_t *r)
 {
@@ -126,11 +155,15 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
     ngx_http_print_ctx_t *pctx;
     ngx_http_print_duplicate_t *pd;
     ngx_int_t rc;
+    ngx_int_t first;
     ngx_buf_t *buf;
     ngx_chain_t out;
     ngx_event_t *wev;
 
+    first = 0;
+
     plcf = ngx_http_get_module_loc_conf(r, ngx_http_print_module);
+
     pctx = ngx_http_get_module_ctx(r, ngx_http_print_module);
 
     pd = (ngx_http_print_duplicate_t *) plcf->dup_objects->elts + pctx->index;
@@ -140,22 +173,45 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
         return rc;
     }
 
-    out.buf = buf;
-    out.next = NULL;
-
-    rc = ngx_http_output_filter(r, &out);
+    if (pctx->index == 0 && pctx->rest == pd->count) {
+        first = 1;
+    }
 
     pctx->rest--;
     if (pctx->rest == 0) {
         pctx->index++;
     }
 
-    if (rc != NGX_ERROR) {
-        /* add to timer */
-        if (pctx->index != plcf->dup_objects->nelts) {
-            wev = r->connection->write;
-            ngx_add_timer(wev, pd->interval);
-        }
+    if (pctx->index == plcf->dup_objects->nelts) {
+        /* last one */
+        buf->last_buf = 1;
+    }
+
+    out.buf = buf;
+    out.next = NULL;
+
+    rc = ngx_http_output_filter(r, &out);
+
+    if (rc == NGX_ERROR) {
+        return rc;
+    }
+
+    /* add to timer */
+    if (pctx->index != plcf->dup_objects->nelts) {
+        wev = r->connection->write;
+        wev->handler = ngx_http_print_process_duplicate_event_handler;
+        ngx_add_timer(wev, pd->interval);
+
+    } else {
+        /* done */
+        ngx_http_finalize_request(r, NGX_HTTP_OK);
+
+        return rc;
+    }
+
+    if (first) {
+        r->main->count++;
+        return NGX_DONE;
     }
 
     return rc;
@@ -195,10 +251,6 @@ ngx_http_print_handler(ngx_http_request_t *r)
         ngx_http_set_ctx(r, pctx, ngx_http_print_module)
     }
 
-    if (pctx->state == NGX_HTTP_PRINT_DUPILCATE) {
-        return ngx_http_print_process_duplicate(r);
-    }
-
     rc = ngx_http_discard_request_body(r);
     if (rc != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -218,7 +270,8 @@ ngx_http_print_handler(ngx_http_request_t *r)
 
         for (i = 0; i < dup_objects->nelts; i++) {
             objects = (ngx_http_print_duplicate_t *) dup_objects->elts + i;
-            content_length += ngx_http_print_gen_print_buf(r, objects->objects, NULL);
+            rc = ngx_http_print_gen_print_buf(r, objects->objects, NULL);
+            content_length += rc * objects->count;
         }
     }
 
@@ -415,7 +468,7 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_str_t                  *object;
     ngx_http_print_loc_conf_t  *plcf = conf;
 
-    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_print_module);
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_print_handler;
 
     value = cf->args->elts;
