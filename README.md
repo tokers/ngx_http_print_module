@@ -2,6 +2,12 @@
 Simple Nginx module for producing HTTP response
 
 
+
+## Note
+
+This document is semi-finished.
+
+
 ## Configuration
 
 ```nginx
@@ -10,6 +16,7 @@ server {
     server_name localhost;
     
     location /t {
+        print_flush on;
         print_sep "\t";
         print_ends "!\n";
         print "Today" "is";
