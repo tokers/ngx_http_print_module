@@ -16,6 +16,8 @@ server {
         print "Wednesday";
         print "I like";
         print "Nginx";
+
+        print_duplicate 10 1000 "Hi" "It" "is a duplicate message.";
     }
 }
 ```
