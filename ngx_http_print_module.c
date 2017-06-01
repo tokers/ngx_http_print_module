@@ -52,6 +52,7 @@ static char *ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *c
 static char *ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev);
+static void ngx_http_print_process_duplicate_cleanup(void *data);
 
 
 static ngx_command_t ngx_http_print_commands[] = {
@@ -120,6 +121,24 @@ ngx_module_t  ngx_http_print_module = {
 };
 
 
+
+static void
+ngx_http_print_process_duplicate_cleanup(void *data)
+{
+    ngx_http_request_t *r = data;
+    ngx_connection_t *c;
+    ngx_event_t *wev;
+
+    c = r->connection;
+    wev = c->write;
+
+    if (wev->timer_set) {
+        ngx_del_timer(wev);
+        wev->timer_set = 0;
+    }
+}
+
+
 static void
 ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev)
 {
@@ -151,14 +170,14 @@ ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev)
 static ngx_int_t
 ngx_http_print_process_duplicate(ngx_http_request_t *r)
 {
-    ngx_http_print_loc_conf_t *plcf;
-    ngx_http_print_ctx_t *pctx;
+    ngx_int_t                   rc;
+    ngx_int_t                   first;
+    ngx_chain_t                 out;
+    ngx_buf_t                  *buf;
+    ngx_http_print_loc_conf_t  *plcf;
+    ngx_http_print_ctx_t       *pctx;
     ngx_http_print_duplicate_t *pd;
-    ngx_int_t rc;
-    ngx_int_t first;
-    ngx_buf_t *buf;
-    ngx_chain_t out;
-    ngx_event_t *wev;
+    ngx_event_t                *wev;
 
     first = 0;
 
@@ -204,12 +223,13 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
 
     } else {
         /* done */
-        ngx_http_finalize_request(r, NGX_HTTP_OK);
+        ngx_http_finalize_request(r, NGX_OK);
 
         return rc;
     }
 
     if (first) {
+        /* keep the count intact */
         r->main->count++;
         return NGX_DONE;
     }
@@ -225,6 +245,7 @@ ngx_http_print_handler(ngx_http_request_t *r)
     ngx_int_t                   content_length;
     ngx_uint_t                  i;
     ngx_chain_t                 out;
+    ngx_http_cleanup_t         *cln;
     ngx_buf_t                  *normal_buf;
     ngx_array_t                *dup_objects;
     ngx_http_print_ctx_t       *pctx;
@@ -305,6 +326,15 @@ ngx_http_print_handler(ngx_http_request_t *r)
         pctx->state = NGX_HTTP_PRINT_DUPILCATE;
         pctx->index = 0;
         pctx->rest = ((ngx_http_print_duplicate_t *) dup_objects->elts)->count;
+
+        cln = ngx_http_cleanup_add(r, 0);
+        if (cln == NULL) {
+            return NGX_ERROR;
+        }
+
+        cln->handler = ngx_http_print_process_duplicate_cleanup;
+        cln->data = r;
+
         return ngx_http_print_process_duplicate(r);
     }
 
