@@ -477,7 +477,7 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     plcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_print_module);
     if (plcf->objects == NULL) {
         /* create the objects */
-        plcf->objects = ngx_array_create(cf->temp_pool, 1, sizeof(ngx_str_t));
+        plcf->objects = ngx_array_create(cf->pool, 1, sizeof(ngx_str_t));
         if (plcf->objects == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -493,7 +493,7 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         object->len = value[i].len;
-        object->data = ngx_palloc(cf->temp_pool, object->len);
+        object->data = ngx_palloc(cf->pool, object->len);
         ngx_memcpy(object->data, value[i].data, value[i].len); 
     }
         
@@ -531,7 +531,7 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (plcf->dup_objects == NULL) {
         /* create the array */
-        plcf->dup_objects = ngx_array_create(cf->temp_pool, 1, sizeof(ngx_http_print_duplicate_t));
+        plcf->dup_objects = ngx_array_create(cf->pool, 1, sizeof(ngx_http_print_duplicate_t));
         if (plcf->dup_objects == NULL) {
             return NGX_CONF_ERROR;
         }
@@ -554,7 +554,7 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         object->len = value[i].len;
-        object->data = ngx_palloc(cf->temp_pool, object->len);
+        object->data = ngx_palloc(cf->pool, object->len);
         ngx_memcpy(object->data, value[i].data, value[i].len);
     }
 
