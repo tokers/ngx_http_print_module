@@ -33,6 +33,7 @@ typedef struct {
     ngx_array_t *dup_objects; /* ngx_http_print_duplicate_t */
     ngx_str_t    sep;
     ngx_str_t    ends;
+    ngx_int_t    flush;
 } ngx_http_print_loc_conf_t;
 
 
@@ -77,6 +78,14 @@ static ngx_command_t ngx_http_print_commands[] = {
       ngx_conf_set_str_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_print_loc_conf_t, ends),
+      NULL },
+
+    { ngx_string("print_flush"),
+      NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF
+                       |NGX_CONF_TAKE1,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF_OFFSET,
+      offsetof(ngx_http_print_loc_conf_t, flush),
       NULL },
 
     { ngx_string("print_duplicate"),
@@ -407,6 +416,10 @@ ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_bu
 
     *out = b;
 
+    if (plcf->flush) {
+        b->flush = 1;
+    }
+
     return size;
 }
 
@@ -424,10 +437,13 @@ ngx_http_print_create_loc_conf(ngx_conf_t *cf)
     /*
      * set by ngx_pcalloc():
      *
-     *     conf->sep      = { 0, NULL };
-     *     conf->ends     = { 0, NULL };
-     *     conf->objects  = NULL;
+     *     conf->sep         = { 0, NULL };
+     *     conf->ends        = { 0, NULL };
+     *     conf->objects     = NULL;
+     *     conf->dup_objects = NULL;
      */
+
+    conf->flush = NGX_CONF_UNSET;
 
     return conf;
 }
