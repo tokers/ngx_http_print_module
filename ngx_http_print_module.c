@@ -46,7 +46,7 @@ typedef struct {
 
 
 static ngx_int_t ngx_http_print_handler(ngx_http_request_t *r);
-static ngx_int_t ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_buf_t **out);
+static ngx_int_t ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_buf_t **out, ngx_int_t last);
 static ngx_int_t ngx_http_print_process_duplicate(ngx_http_request_t *r);
 static void *ngx_http_print_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
@@ -180,26 +180,24 @@ static ngx_int_t
 ngx_http_print_process_duplicate(ngx_http_request_t *r)
 {
     ngx_int_t                   rc;
+    ngx_int_t                   last;
     ngx_int_t                   first;
     ngx_chain_t                 out;
     ngx_buf_t                  *buf;
     ngx_http_print_loc_conf_t  *plcf;
     ngx_http_print_ctx_t       *pctx;
     ngx_http_print_duplicate_t *pd;
+    ngx_http_print_duplicate_t *next_pd;
     ngx_event_t                *wev;
 
     first = 0;
+    last = 0;
 
     plcf = ngx_http_get_module_loc_conf(r, ngx_http_print_module);
 
     pctx = ngx_http_get_module_ctx(r, ngx_http_print_module);
 
     pd = (ngx_http_print_duplicate_t *) plcf->dup_objects->elts + pctx->index;
-
-    rc = ngx_http_print_gen_print_buf(r, pd->objects, &buf);
-    if (rc == NGX_ERROR) {
-        return rc;
-    }
 
     if (pctx->index == 0 && pctx->rest == pd->count) {
         first = 1;
@@ -208,9 +206,22 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
     pctx->rest--;
     if (pctx->rest == 0) {
         pctx->index++;
+
+        next_pd = pd;
+        next_pd++;
+        pctx->rest = next_pd->count;
     }
 
     if (pctx->index == plcf->dup_objects->nelts) {
+        last = 1;
+    }
+
+    rc = ngx_http_print_gen_print_buf(r, pd->objects, &buf, last);
+    if (rc == NGX_ERROR) {
+        return rc;
+    }
+
+    if (last) {
         /* last one */
         buf->last_buf = 1;
     }
@@ -266,13 +277,6 @@ ngx_http_print_handler(ngx_http_request_t *r)
     pctx = ngx_http_get_module_ctx(r, ngx_http_print_module);
     if (pctx == NULL) {
         pctx = ngx_pcalloc(r->pool, sizeof(ngx_http_print_ctx_t));
-        /*
-         * set by ngx_pcalloc():
-         *
-         *     pctx->count        = 0;
-         *     pctx->ends         = 0;
-         *     pctx->dup_objects  = NULL;
-         */
 
         if (pctx == NULL) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -286,7 +290,7 @@ ngx_http_print_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    rc = ngx_http_print_gen_print_buf(r, plcf->objects, &normal_buf);
+    rc = ngx_http_print_gen_print_buf(r, plcf->objects, &normal_buf, 1);
     if (rc == NGX_ERROR) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -300,7 +304,9 @@ ngx_http_print_handler(ngx_http_request_t *r)
 
         for (i = 0; i < dup_objects->nelts; i++) {
             objects = (ngx_http_print_duplicate_t *) dup_objects->elts + i;
-            rc = ngx_http_print_gen_print_buf(r, objects->objects, NULL);
+            rc = ngx_http_print_gen_print_buf(r, objects->objects, NULL,
+                                              i + 1 == dup_objects->nelts);
+
             content_length += rc * objects->count;
         }
     }
@@ -352,7 +358,8 @@ ngx_http_print_handler(ngx_http_request_t *r)
 
 
 static ngx_int_t
-ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_buf_t **out)
+ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects,
+    ngx_buf_t **out, ngx_int_t last)
 {
     ngx_uint_t                 i, size, nelts;
     ngx_buf_t                 *b;
@@ -383,7 +390,12 @@ ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_bu
         size += (nelts - 1) * sep->len;
     }
 
-    size += ends->len;
+    if (last) {
+        size += ends->len;
+
+    } else {
+        size += sep->len;
+    }
 
     if (out == NULL) {
         return size;
@@ -412,7 +424,12 @@ ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_bu
         b->last = ngx_cpymem(b->last, sep->data, sep->len);
     }
 
-    b->last = ngx_cpymem(b->last, ends->data, ends->len);
+    if (last) {
+        b->last = ngx_cpymem(b->last, ends->data, ends->len);
+
+    } else {
+        b->last = ngx_cpymem(b->last, sep->data, sep->len);
+    }
 
     *out = b;
 
