@@ -313,6 +313,7 @@ ngx_http_print_handler(ngx_http_request_t *r)
 
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = content_length;
+    r->allow_ranges = 1;
 
     if (ngx_http_set_content_type(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
