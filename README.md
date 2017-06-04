@@ -45,7 +45,7 @@ Set the end string after all the messages.
 
 *phase: content*
 
-When this option is on, messages will be flushed as soon as possible.
+When this option is enable, messages will be flushed as soon as possible.
 
 ### print
 
