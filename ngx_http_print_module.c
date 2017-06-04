@@ -261,7 +261,7 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_print_handler(ngx_http_request_t *r)
 {
-    ngx_int_t                   rc;
+    ngx_int_t                   rc, offset;
     ngx_int_t                   content_length;
     ngx_uint_t                  i;
     ngx_chain_t                 out;
@@ -273,6 +273,7 @@ ngx_http_print_handler(ngx_http_request_t *r)
     ngx_http_print_duplicate_t *objects;
 
     plcf = ngx_http_get_module_loc_conf(r, ngx_http_print_module);
+    offset = plcf->ends.len - plcf->sep.len;
 
     pctx = ngx_http_get_module_ctx(r, ngx_http_print_module);
     if (pctx == NULL) {
@@ -304,10 +305,16 @@ ngx_http_print_handler(ngx_http_request_t *r)
 
         for (i = 0; i < dup_objects->nelts; i++) {
             objects = (ngx_http_print_duplicate_t *) dup_objects->elts + i;
-            rc = ngx_http_print_gen_print_buf(r, objects->objects, NULL,
-                                              i + 1 == dup_objects->nelts);
+
+            /* We always set the last zero here for convenience */
+            rc = ngx_http_print_gen_print_buf(r, objects->objects, NULL, 0);
 
             content_length += rc * objects->count;
+
+            if (i + 1 == dup_objects->nelts) {
+                /* fix with the offset*/
+                content_length += + offset;
+            }
         }
     }
 
