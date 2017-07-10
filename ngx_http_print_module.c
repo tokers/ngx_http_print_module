@@ -325,11 +325,11 @@ ngx_http_print_handler(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_print_duplicate_handler(ngx_http_request_t *r)
 {
-    ngx_int_t rc;
-    ngx_array_t *dup_objects;
+    ngx_int_t                  rc;
+    ngx_array_t               *dup_objects;
     ngx_http_print_loc_conf_t *plcf;
-    ngx_http_print_ctx_t *pctx;
-    ngx_http_cleanup_t *cln;
+    ngx_http_print_ctx_t      *pctx;
+    ngx_http_cleanup_t        *cln;
 
     plcf = ngx_http_get_module_loc_conf(r, ngx_http_print_module);
     pctx = ngx_http_get_module_ctx(r, ngx_http_print_module);
