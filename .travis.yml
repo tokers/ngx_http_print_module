@@ -18,7 +18,7 @@ install:
     - wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz && tar -xzf nginx-${NGINX_VERSION}.tar.gz
 
 script:
-    - cd nginx-${NGX_VERSION}/
+    - cd nginx-${NGINX_VERSION}/
     - ./auto/configure --with-debug --add-module=.. > build.log 2&>1 || (cat build.log && exit 1)
     - make -j2 > build.log 2&>1 || (cat build.log && exit 1)
     - export PATH=$PATH:`pwd`/objs
