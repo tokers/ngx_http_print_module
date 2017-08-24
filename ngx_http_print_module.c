@@ -1,6 +1,6 @@
 
 /* 
- * Copyright Alex(zchao1995@gmail.com)
+ * Copyright (C) Alex Zhang
  *
  * ngx_http_print_module
  *
@@ -550,12 +550,18 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     count = ngx_atoi(value[1].data, value[1].len);
     if (count == NGX_ERROR || count <= 0) {
-        return "(bad count value)";
+        ngx_log_error(NGX_LOG_EMERG, cf, 0,
+                      "invalid count value \"%V\"", value[1]);
+
+        return NGX_CONF_ERROR;
     }
 
     interval = ngx_atoi(value[2].data, value[2].len);
     if (interval == NGX_ERROR || interval <= 0) {
-        return "(bad interval value)";
+        ngx_log_error(NGX_LOG_EMERG, cf, 0,
+                      "invalid intervalvalue \"%V\"", value[2]);
+
+        return NGX_CONF_ERROR;
     }
 
     if (plcf->dup_objects == NULL) {
