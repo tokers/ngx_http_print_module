@@ -22,8 +22,9 @@ typedef struct {
 
 
 typedef struct {
-    ngx_array_t *objects;
+    ngx_array_t *objects;      /* ngx_str_t */
     ngx_array_t *dup_objects; /* ngx_http_print_duplicate_t */
+    ngx_str_t    value;
     ngx_str_t    sep;
     ngx_str_t    ends;
     ngx_int_t    flush;
@@ -197,6 +198,7 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
 
     ngx_log_error(NGX_LOG_DEBUG_HTTP, c->log, 0, "index = %d, rest = %d"
                   "total = %d", pctx->index, pctx->rest, pd->count);
+
     if (pctx->index == 0 && pctx->rest == pd->count) {
         first = 1;
     }
@@ -382,7 +384,7 @@ ngx_http_print_duplicate_handler(ngx_http_request_t *r)
 
 static ngx_int_t
 ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects,
-    ngx_buf_t **out)
+                             ngx_buf_t **out)
 {
     ngx_uint_t                 i, size, nelts;
     ngx_buf_t                 *b;
@@ -522,8 +524,7 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         object->len = value[i].len;
-        object->data = ngx_palloc(cf->pool, object->len);
-        ngx_memcpy(object->data, value[i].data, value[i].len); 
+        object->data = &value[i];
     }
         
     return NGX_CONF_OK;
