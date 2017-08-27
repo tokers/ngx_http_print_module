@@ -1,6 +1,6 @@
 
 /* 
- * Copyright Alex(zchao1995@gmail.com)
+ * Copyright (C) Alex Zhang
  *
  * ngx_http_print_module
  *
@@ -22,8 +22,9 @@ typedef struct {
 
 
 typedef struct {
-    ngx_array_t *objects;
+    ngx_array_t *objects;      /* ngx_array_t */
     ngx_array_t *dup_objects; /* ngx_http_print_duplicate_t */
+    ngx_str_t    value;
     ngx_str_t    sep;
     ngx_str_t    ends;
     ngx_int_t    flush;
@@ -31,22 +32,29 @@ typedef struct {
 
 
 typedef struct {
-    int        rest;
-    ngx_uint_t index; /* used when print duplicate objs */
-    ngx_buf_t *dup_objects; /* used when print duplicate objs */
+    int          rest;
+    ngx_uint_t   index; /* used when print duplicate objs */
+    ngx_buf_t   *dup_objects; /* used when print duplicate objs */
+    ngx_array_t *array; /* ngx_str_t */
 } ngx_http_print_ctx_t;
 
 
 static ngx_int_t ngx_http_print_handler(ngx_http_request_t *r);
+
+#if 0
+
 static ngx_int_t ngx_http_print_duplicate_handler(ngx_http_request_t *r);
-static ngx_int_t ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_buf_t **out);
-static ngx_int_t ngx_http_print_process_duplicate(ngx_http_request_t *r);
-static void *ngx_http_print_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
-static char *ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static char *ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev);
 static void ngx_http_print_process_duplicate_cleanup(void *data);
+static ngx_int_t ngx_http_print_process_duplicate(ngx_http_request_t *r);
+
+#endif
+
+static ngx_int_t ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects, ngx_buf_t **out);
+static void *ngx_http_print_create_loc_conf(ngx_conf_t *cf);
+static char *ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
+static char *ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 
 static ngx_command_t ngx_http_print_commands[] = {
@@ -81,12 +89,14 @@ static ngx_command_t ngx_http_print_commands[] = {
       offsetof(ngx_http_print_loc_conf_t, flush),
       NULL },
 
+#if 0
     { ngx_string("print_duplicate"),
       NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF|NGX_CONF_2MORE,
       ngx_http_print_duplicate,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
+#endif
 };
 
 
@@ -123,6 +133,7 @@ ngx_module_t  ngx_http_print_module = {
 };
 
 
+#if 0
 
 static void
 ngx_http_print_process_duplicate_cleanup(void *data)
@@ -140,6 +151,10 @@ ngx_http_print_process_duplicate_cleanup(void *data)
     }
 }
 
+#endif
+
+
+#if 0
 
 static void
 ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev)
@@ -168,7 +183,10 @@ ngx_http_print_process_duplicate_event_handler(ngx_event_t *wev)
     (void) ngx_http_print_process_duplicate(r);
 }
 
+#endif
 
+
+# if 0
 static ngx_int_t
 ngx_http_print_process_duplicate(ngx_http_request_t *r)
 {
@@ -197,6 +215,7 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
 
     ngx_log_error(NGX_LOG_DEBUG_HTTP, c->log, 0, "index = %d, rest = %d"
                   "total = %d", pctx->index, pctx->rest, pd->count);
+
     if (pctx->index == 0 && pctx->rest == pd->count) {
         first = 1;
     }
@@ -262,13 +281,16 @@ ngx_http_print_process_duplicate(ngx_http_request_t *r)
     return rc;
 }
 
+#endif
+
 
 static ngx_int_t
 ngx_http_print_handler(ngx_http_request_t *r)
 {
     ngx_int_t                   rc;
+    ngx_uint_t                  i, nelts;
     ngx_chain_t                 out;
-    ngx_buf_t                  *normal_buf;
+    ngx_buf_t                  *buf;
     ngx_http_print_ctx_t       *pctx;
     ngx_http_print_loc_conf_t  *plcf;
 
@@ -289,15 +311,11 @@ ngx_http_print_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    rc = ngx_http_print_gen_print_buf(r, plcf->objects, &normal_buf);
-    if (rc == NGX_ERROR) {
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    /* We need to calculate the proper Content-Length header */
     r->headers_out.status = NGX_HTTP_OK;
-    r->headers_out.content_length_n = rc;
     r->allow_ranges = 1;
+    r->chunked = 1;
+
+    ngx_http_clear_content_length(r);
 
     if (ngx_http_set_content_type(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -308,19 +326,36 @@ ngx_http_print_handler(ngx_http_request_t *r)
         return rc;
     }
 
-    if (r == r->main)  {
-        normal_buf->last_buf = 1; /* last buf */
+    nelts = plcf->objects->nelts;
 
-    } else {
-        normal_buf->last_in_chain = 1;
+    for (i = 0; i < nelts; i++) {
+        rc = ngx_http_print_gen_print_buf(r, (ngx_array_t *) plcf->objects->elts + i, &buf);
+        if (rc != NGX_OK) {
+            return rc;
+        }
+
+        if (i == nelts - 1) {
+            if (r == r->main) {
+                buf->last_buf = 1;
+
+            } else {
+                buf->last_in_chain = 1;
+            }
+        }
+
+        out.buf = buf;
+        out.next = NULL;
+
+        rc = ngx_http_output_filter(r, &out);
+        if (rc != NGX_OK) {
+            return rc;
+        }
     }
 
-    out.buf = normal_buf;
-    out.next = NULL;
-
-    return ngx_http_output_filter(r, &out);
+    return NGX_OK;
 }
 
+#if 0
 
 static ngx_int_t
 ngx_http_print_duplicate_handler(ngx_http_request_t *r)
@@ -379,53 +414,54 @@ ngx_http_print_duplicate_handler(ngx_http_request_t *r)
     return ngx_http_print_process_duplicate(r);
 }
 
+#endif
+
 
 static ngx_int_t
 ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects,
-    ngx_buf_t **out)
+                             ngx_buf_t **out)
 {
-    ngx_uint_t                 i, size, nelts;
+    size_t                     size;
+    ngx_uint_t                 i, nelts, nalloc;
     ngx_buf_t                 *b;
-    ngx_str_t                 *item, *sep, *ends;
+    ngx_str_t                 *item, *sep, *ends, *target;
     ngx_http_print_loc_conf_t *plcf;
-
-    if (objects == NULL) {
-        if (out) {
-            *out = NULL;
-        }
-
-        return 0;
-    }
+    ngx_http_print_ctx_t      *pctx;
+    ngx_http_complex_value_t  *cv;
 
     size  = 0;
     plcf  = ngx_http_get_module_loc_conf(r, ngx_http_print_module);
+    pctx  = ngx_http_get_module_ctx(r, ngx_http_print_module);
     nelts = objects->nelts;
     sep   = &plcf->sep;
     ends  = &plcf->ends;
 
-    /* calculate the total lengths */
+    if (pctx->array == NULL) {
+        pctx->array = (ngx_array_t *) ngx_array_create(r->pool, nelts, sizeof(ngx_str_t));
+        if (pctx->array == NULL) {
+            return NGX_ERROR;
+        }
+    }
+
+    nalloc = pctx->array->nalloc;
+
     for (i = 0; i < nelts; i++) {
-        item = (ngx_str_t *) objects->elts + i;
-        size += item->len;
+        if (nalloc > i) {
+            target = (ngx_str_t *) pctx->array->elts + i;
+
+        } else {
+            target = ngx_array_push(pctx->array);
+        }
+
+        cv = (ngx_http_complex_value_t *) objects->elts + i;
+        if (ngx_http_complex_value(r, cv, target) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        size += target->len;
     }
 
-    if (nelts > 0) {
-        size += (nelts - 1) * sep->len;
-    }
-
-    size += ends->len;
-
-    /* only compute the size */
-    if (out == NULL) {
-        return size;
-    }
-
-    if (size == 0) {
-        /* empty normal buf */
-        *out = NULL;
-
-        return size;
-    }
+    size += (nelts - 1) * sep->len + ends->len;
 
     b = ngx_create_temp_buf(r->pool, size);
     if (b == NULL) {
@@ -433,11 +469,11 @@ ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects,
     }
 
     for (i = 0; i < nelts; i++) {
-        item = (ngx_str_t *) objects->elts + i;
+        item = (ngx_str_t *) pctx->array->elts + i;
         b->last = ngx_cpymem(b->last, item->data, item->len);
 
         if (i == nelts - 1) {
-            continue;
+            break;
         }
 
         b->last = ngx_cpymem(b->last, sep->data, sep->len);
@@ -450,7 +486,7 @@ ngx_http_print_gen_print_buf(ngx_http_request_t *r, ngx_array_t *objects,
         b->flush = 1;
     }
 
-    return size;
+    return NGX_OK;
 }
 
 
@@ -495,11 +531,13 @@ ngx_http_print_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static char *
 ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_core_loc_conf_t  *clcf;
-    ngx_http_print_loc_conf_t *plcf;
-    ngx_str_t                 *object;
-    ngx_str_t                 *value;
-    ngx_uint_t                 i;
+    ngx_http_core_loc_conf_t         *clcf;
+    ngx_http_print_loc_conf_t        *plcf;
+    ngx_str_t                        *value;
+    ngx_array_t                      *array;
+    ngx_http_complex_value_t         *cv;
+    ngx_uint_t                        i, nelts;
+    ngx_http_compile_complex_value_t  ccv;
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
     clcf->handler = ngx_http_print_handler;
@@ -507,29 +545,47 @@ ngx_http_print(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     plcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_print_module);
     if (plcf->objects == NULL) {
         /* create the objects */
-        plcf->objects = ngx_array_create(cf->pool, 1, sizeof(ngx_str_t));
+        plcf->objects = ngx_array_create(cf->pool, 1, sizeof(ngx_array_t));
         if (plcf->objects == NULL) {
             return NGX_CONF_ERROR;
         }
     }
 
     value = cf->args->elts;
+    nelts = cf->args->nelts;
+
+    array = ngx_array_push(plcf->objects);
+    if (array == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    ngx_array_init(array, cf->pool, nelts, sizeof(ngx_http_complex_value_t));
 
     for (i = 1; i < cf->args->nelts; i++) {
-        object = ngx_array_push(plcf->objects);
-        if (object == NULL) {
+        if (value[i].len == 0) {
+            continue;
+        }
+
+        cv = ngx_array_push(array);
+        if (cv == NULL) {
             return NGX_CONF_ERROR;
         }
 
-        object->len = value[i].len;
-        object->data = ngx_palloc(cf->pool, object->len);
-        ngx_memcpy(object->data, value[i].data, value[i].len); 
+        ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+        ccv.cf = cf;
+        ccv.value = &value[i];
+        ccv.complex_value = cv;
+
+        if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
     }
         
     return NGX_CONF_OK;
 }
 
 
+#if 0
 /* print_duplicate count interval *objects */
 static char *
 ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
@@ -550,12 +606,18 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     count = ngx_atoi(value[1].data, value[1].len);
     if (count == NGX_ERROR || count <= 0) {
-        return "(bad count value)";
+        ngx_log_error(NGX_LOG_EMERG, cf, 0,
+                      "invalid count value \"%V\"", value[1]);
+
+        return NGX_CONF_ERROR;
     }
 
     interval = ngx_atoi(value[2].data, value[2].len);
     if (interval == NGX_ERROR || interval <= 0) {
-        return "(bad interval value)";
+        ngx_log_error(NGX_LOG_EMERG, cf, 0,
+                      "invalid intervalvalue \"%V\"", value[2]);
+
+        return NGX_CONF_ERROR;
     }
 
     if (plcf->dup_objects == NULL) {
@@ -588,3 +650,5 @@ ngx_http_print_duplicate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     return NGX_CONF_OK;
 }
+
+#endif
